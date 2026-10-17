@@ -50,7 +50,10 @@ function filterAdsFromM3U8(type, m3u8Content) {
     var end = (b + 1 < discIdx.length) ? discIdx[b + 1] : lines.length;
     var ds = durationsOf(lines.slice(start + 1, end));
     if (ds.length > 0 && sigMatch(ds)) {
-      for (var k = start; k < end; k++) drop[k] = true;
+      for (var k = start; k < end; k++) {
+        if (lines[k].indexOf('#EXT-X-ENDLIST') !== -1) continue; // 别吞掉尾标记
+        drop[k] = true;
+      }
     }
   }
   var kept = [];
