@@ -189,6 +189,8 @@ fun SettingsTab(
     var isLocalMode by remember { mutableStateOf(AppDataService.isLocalModeSync()) }
     // 弹幕默认模式：off（完全关闭）/ manual（默认不开启）/ auto（默认开启）。点按循环。
     var danmakuMode by remember { mutableStateOf(AppDataService.getDanmakuModeSync()) }
+    // m3u8 去广告：点按切换开/关（仅 ExoPlayer 路径生效，MPV 不支持）。
+    var adFilterEnabled by remember { mutableStateOf(AppDataService.getAdFilterEnabledSync()) }
     // 弹幕源启用集合（多选）
     var enabledDanmakuSources by remember { mutableStateOf(AppDataService.getEnabledDanmakuSourcesSync()) }
     var showDanmakuSourcesDialog by remember { mutableStateOf(false) }
@@ -420,6 +422,15 @@ fun SettingsTab(
                     value = decodeMode.ifEmpty { "硬解" },
                     onClick = { showDecodeModeDialog = true },
                     modifier = Modifier.focusRequester(decodeModeFocusRequester)
+                )
+                // 去广告（点按切换）：m3u8 播放列表广告分片过滤，仅 ExoPlayer 生效。
+                SettingRow(
+                    label = "去广告",
+                    value = if (adFilterEnabled) "开" else "关",
+                    onClick = {
+                        adFilterEnabled = !adFilterEnabled
+                        AppDataService.setAdFilterEnabledSync(adFilterEnabled)
+                    },
                 )
                 // 弹幕默认模式（点按循环）：关闭=完全不请求/不显示按键；手动=probe 但不自动选源；自动=自动选最佳源。
                 SettingRow(

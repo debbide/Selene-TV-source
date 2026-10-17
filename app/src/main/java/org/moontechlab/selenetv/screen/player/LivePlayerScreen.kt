@@ -68,7 +68,7 @@ private val LiveGreen = Color(0xFF4CAF50)
 @Composable
 fun LivePlayerScreen(launch: LiveLaunch, onExit: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val controller: VideoPlayer = remember { PlayerFactory.create(context, launch.source.ua) }
+    val controller: VideoPlayer = remember { PlayerFactory.create(context, launch.source.ua, sourceType = launch.source.key) }
 
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var currentChannel by remember { mutableStateOf(launch.channel) }

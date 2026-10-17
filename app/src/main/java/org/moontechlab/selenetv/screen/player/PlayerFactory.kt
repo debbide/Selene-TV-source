@@ -3,6 +3,7 @@ package org.moontechlab.selenetv.screen.player
 import android.content.Context
 import android.os.Build
 import androidx.media3.datasource.DataSource
+import org.moontechlab.selenetv.service.AdFilterService
 import org.moontechlab.selenetv.service.AppDataService
 import org.moontechlab.selenetv.service.AppDataService.PlayerType
 import org.moontechlab.selenetv.service.MediaHttp
@@ -16,10 +17,13 @@ fun resolveEffectivePlayerType(requested: PlayerType, sdkInt: Int): PlayerType =
 /**
  * 按设置 + 系统版本创建播放器后端。
  * @param userAgent 直播源 UA；点播传 null（用默认 DataSource）。
+ * @param sourceType 当前播放源 key（点播为 "source+id"，直播为 LiveSource.key）；
+ *                   供去广告自定义 JS 的 type 参数使用，一期暂未消费。
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 object PlayerFactory {
-    fun create(context: Context, userAgent: String? = null): VideoPlayer {
+    fun create(context: Context, userAgent: String? = null, sourceType: String? = null): VideoPlayer {
+        AdFilterService.activeSourceType = sourceType
         val decode = AppDataService.getDecodeModeSync()
         val type = resolveEffectivePlayerType(AppDataService.getPlayerTypeSync(), Build.VERSION.SDK_INT)
         fun exo(): VideoPlayer {

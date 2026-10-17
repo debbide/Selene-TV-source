@@ -97,7 +97,7 @@ fun PlayerScreen(launch: PlayerLaunch, onExit: () -> Unit, modifier: Modifier = 
     // MainActivity.dispatchKeyEvent，故 5021ed4 的 Activity 级 BACK 自管对这里失效。BackHandler 绑定的是
     // Dialog 自身的 onBackPressedDispatcher，下方 root 直接拦截 BACK 手动驱动它（见 onPreviewKeyEvent 注释）。
     val backDispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
-    val controller: VideoPlayer = remember { PlayerFactory.create(context) }
+    val controller: VideoPlayer = remember { PlayerFactory.create(context, sourceType = launch.selectedSourceKey) }
     val reporter = remember { PlayProgressReporter() }
 
     // 播放页处于独立 Dialog 窗口（见 DetailScreen 用 Dialog 隔离焦点域）。Compose Dialog 在

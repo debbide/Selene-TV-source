@@ -30,6 +30,7 @@ object AppDataService {
     private const val KEY_SESSION_TOKEN = "session_token"
     private const val KEY_PLAYER_TYPE = "player_type"
     private const val KEY_DECODE_MODE = "decode_mode"
+    private const val KEY_AD_FILTER_ENABLED = "ad_filter_enabled"   // m3u8 去广告开关
     private const val KEY_SEARCH_ORIGIN = "search_origin"
     private const val KEY_IS_LOCAL_MODE = "is_local_mode"
     private const val KEY_SKIPPED_VERSION = "skipped_version"
@@ -685,6 +686,14 @@ object AppDataService {
     }
     fun getDecodeModeSync(): DecodeMode =
         DecodeMode.fromKey(prefs.getString(KEY_DECODE_MODE, DecodeMode.HARDWARE.key) ?: DecodeMode.HARDWARE.key)
+
+    // ---- 去广告 ----
+    /** m3u8 去广告开关（默认开；仅 ExoPlayer 路径生效，MPV 不支持）。 */
+    fun getAdFilterEnabledSync(): Boolean = prefs.getBoolean(KEY_AD_FILTER_ENABLED, true)
+
+    fun setAdFilterEnabledSync(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AD_FILTER_ENABLED, enabled).apply()
+    }
 
     // ---- 搜索发起方 ----
     suspend fun saveSearchOrigin(displayName: String) = withContext(Dispatchers.IO) {

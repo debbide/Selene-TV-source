@@ -23,18 +23,21 @@ object MediaHttp {
     /** 供测速等普通 HTTP 请求复用的客户端（同样信任所有证书、跳过 hostname 校验）。 */
     val httpClient: OkHttpClient get() = client
 
-    /** ExoPlayer DefaultMediaSourceFactory 使用的 DataSource 工厂。 */
+    /** ExoPlayer DefaultMediaSourceFactory 使用的 DataSource 工厂（包一层 m3u8 去广告）。 */
     val dataSourceFactory: DataSource.Factory by lazy {
-        OkHttpDataSource.Factory(client)
+        val upstream = OkHttpDataSource.Factory(client)
+        DataSource.Factory { AdFilteringDataSource(upstream.createDataSource()) }
     }
 
     /** 直播 UA 回退：源未配置 UA 时用 AptvPlayer 默认（与 LiveService 一致）。 */
     fun resolveLiveUa(userAgent: String): String = userAgent.ifBlank { DEFAULT_LIVE_UA }
 
-    /** 带指定 UA 的 DataSource 工厂（直播源常需 UA，如 AptvPlayer）。 */
+    /** 带指定 UA 的 DataSource 工厂（直播源常需 UA，如 AptvPlayer；同样包一层 m3u8 去广告）。 */
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-    fun dataSourceFactory(userAgent: String): DataSource.Factory =
-        OkHttpDataSource.Factory(client).setUserAgent(resolveLiveUa(userAgent))
+    fun dataSourceFactory(userAgent: String): DataSource.Factory {
+        val upstream = OkHttpDataSource.Factory(client).setUserAgent(resolveLiveUa(userAgent))
+        return DataSource.Factory { AdFilteringDataSource(upstream.createDataSource()) }
+    }
 
     private fun createUnsafeOkHttpClient(): OkHttpClient {
         return try {
