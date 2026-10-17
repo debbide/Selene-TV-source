@@ -21,6 +21,7 @@ import java.io.IOException
  *
  * 注意：open() 跑在 ExoPlayer loader 线程，过滤函数必须线程安全（AdFilterService 是纯函数）。
  */
+@Suppress("SpellCheckingInspection") // "mpegurl" 是合法 MIME 后缀 application/x-mpegURL
 @OptIn(UnstableApi::class)
 class AdFilteringDataSource(
     private val delegate: DataSource,
@@ -46,7 +47,8 @@ class AdFilteringDataSource(
 
         if (!AdFilterService.isEnabled()) return length
         if (!isPlaylist(dataSpec)) return length
-        if (length != C.LENGTH_UNSET && length > MAX_PLAYLIST_BYTES) return length
+        // LENGTH_UNSET = -1，天然小于上限，无需单独判断
+        if (length > MAX_PLAYLIST_BYTES) return length
 
         val raw = readFully(delegate)
         val text = raw.toString(Charsets.UTF_8)
