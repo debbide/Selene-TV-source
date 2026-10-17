@@ -31,6 +31,8 @@ object AppDataService {
     private const val KEY_PLAYER_TYPE = "player_type"
     private const val KEY_DECODE_MODE = "decode_mode"
     private const val KEY_AD_FILTER_ENABLED = "ad_filter_enabled"   // m3u8 去广告开关
+    private const val KEY_AD_FILTER_CODE = "ad_filter_code"           // 自定义去广告 JS
+    private const val KEY_AD_FILTER_VERSION = "ad_filter_version"     // 自定义去广告代码版本
     private const val KEY_SEARCH_ORIGIN = "search_origin"
     private const val KEY_IS_LOCAL_MODE = "is_local_mode"
     private const val KEY_SKIPPED_VERSION = "skipped_version"
@@ -693,6 +695,20 @@ object AppDataService {
 
     fun setAdFilterEnabledSync(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AD_FILTER_ENABLED, enabled).apply()
+    }
+
+    /** 自定义去广告 JS（从服务端 /api/ad-filter 拉取，空=未配置）。 */
+    fun getAdFilterCodeSync(): String = prefs.getString(KEY_AD_FILTER_CODE, "") ?: ""
+
+    fun setAdFilterCodeSync(code: String) {
+        prefs.edit().putString(KEY_AD_FILTER_CODE, code).apply()
+    }
+
+    /** 自定义去广告代码版本号（服务端 version，用于判断是否需要重拉）。 */
+    fun getAdFilterVersionSync(): Int = prefs.getInt(KEY_AD_FILTER_VERSION, 0)
+
+    fun setAdFilterVersionSync(version: Int) {
+        prefs.edit().putInt(KEY_AD_FILTER_VERSION, version).apply()
     }
 
     // ---- 搜索发起方 ----

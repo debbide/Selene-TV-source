@@ -1,18 +1,25 @@
 package org.moontechlab.selenetv.service
 
 import android.util.Log
+import com.whl.quickjs.android.QuickJSLoader
+import com.whl.quickjs.wrapper.QuickJSContext
+import org.json.JSONObject
 
 /**
- * m3u8 去广告（对齐 LunaTV 网页端默认规则，并扩展了广告块指纹规则）。
+ * m3u8 去广告（对齐 LunaTV 网页端）。
  *
- * 一期：纯 Kotlin 内置规则，零网络、零新依赖。共两层：
+ * 优先级：自定义 JS（服务端 /api/ad-filter 下发，QuickJS 执行）
+ *      → 内置规则（广告块指纹 + 关键字）→ 原样返回。
+ *
+ * 自定义 JS 契约与网页端一致：代码定义 filterAdsFromM3U8(type, m3u8Content)，
+ * type 为当前播放源 key。执行抛错/返回空时降级到内置规则。
+ *
+ * 内置规则（零网络、零新依赖）：
  * 1. 广告块指纹：删掉被 #EXT-X-DISCONTINUITY 对夹住、且分段时长呈循环小数
  *    （如 5.566667、2.933333）的广告块。某类广告编码器按 30fps 整帧数输出时长，
  *    写成秒就是这种循环小数，与正片分段的规整时长（4.000000、3.880000）显著不同。
  *    这是指纹式启发规则——换一家广告编码器就可能失效，届时看日志再调。
  * 2. 关键字规则：网页端 play/page.tsx 默认规则的逐行 port。
- * 二期预留：拉取服务端 /api/ad-filter 自定义 JS（customCode/customVersion 字段已留好，
- * 执行引擎与版本缓存逻辑在接入 QuickJS 时补上）。
  */
 object AdFilterService {
     private const val TAG = "AdFilter"
@@ -30,33 +37,134 @@ object AdFilterService {
 
     /**
      * 当前播放源 key（点播为 "source+id"，直播为 LiveSource.key），对应自定义 JS 契约的 type 参数。
-     * 由 PlayerFactory.create() 在建播放器时写入；一期暂未使用，二期自定义 JS 需要。
+     * 由 PlayerFactory.create() 在建播放器时写入。
      */
     @Volatile
     var activeSourceType: String? = null
 
-    /** 二期：服务端下发的自定义去广告代码（/api/ad-filter?full=true 的 code 字段）。 */
+    /** 自定义去广告 JS（服务端下发，落盘缓存；空=未配置）。 */
     @Volatile
     var customCode: String? = null
+        private set
 
-    /** 二期：自定义代码版本号（用于与服务端 version 比对、决定是否重拉）。 */
+    /** 自定义代码版本号（用于与服务端 version 比对、决定是否重拉）。 */
     @Volatile
     var customVersion: Int = 0
+        private set
+
+    @Volatile
+    private var prefsLoaded = false
+
+    @Volatile
+    private var quickJsReady: Boolean? = null
 
     fun isEnabled(): Boolean = AppDataService.getAdFilterEnabledSync()
 
+    fun hasCustomCode(): Boolean {
+        loadPrefsOnce()
+        return !customCode.isNullOrBlank()
+    }
+
+    fun setCustomCode(code: String, version: Int) {
+        customCode = code
+        customVersion = version
+        prefsLoaded = true
+        AppDataService.setAdFilterCodeSync(code)
+        AppDataService.setAdFilterVersionSync(version)
+    }
+
+    fun clearCustomCode() {
+        customCode = null
+        customVersion = 0
+        prefsLoaded = true
+        AppDataService.setAdFilterCodeSync("")
+        AppDataService.setAdFilterVersionSync(0)
+    }
+
+    private fun loadPrefsOnce() {
+        if (prefsLoaded) return
+        synchronized(this) {
+            if (prefsLoaded) return
+            customCode = AppDataService.getAdFilterCodeSync().takeIf { it.isNotBlank() }
+            customVersion = AppDataService.getAdFilterVersionSync()
+            prefsLoaded = true
+        }
+    }
+
     /**
-     * 过滤入口：开关关闭时原样返回；否则先做广告块指纹过滤，再走关键字规则
-     * （自定义代码未接入时跳过，降级到内置规则）。
-     * 纯函数、线程安全（调用方是 ExoPlayer loader 线程）。
+     * 过滤入口：开关关闭时原样返回；否则先同步自定义代码（节流），
+     * 有自定义代码则优先用 QuickJS 执行，失败/无代码时降级到内置规则。
+     * 调用方是 ExoPlayer loader 线程，可阻塞。
      */
     fun filter(type: String?, content: String): String {
         if (content.isEmpty()) return content
+        loadPrefsOnce()
+        AdFilterFetcher.ensureLatest()
         val code = customCode
         if (!code.isNullOrBlank()) {
-            // 二期：QuickJS 执行 filterAdsFromM3U8(type, content)，抛错则降级到内置规则。
-            Log.w(TAG, "自定义去广告代码尚未接入执行引擎，降级使用内置规则")
+            val customResult = runCustomJs(type, code, content)
+            if (!customResult.isNullOrEmpty()) {
+                Log.i(TAG, "自定义去广告生效（版本 $customVersion）")
+                return customResult
+            }
+            Log.w(TAG, "自定义去广告执行失败，降级使用内置规则")
         }
+        return filterBuiltin(content)
+    }
+
+    /**
+     * 用 QuickJS 执行自定义代码（与网页端 new Function 契约一致）。
+     * 每次调用新建 context、用完即销毁，全程在调用线程内，无线程亲和问题。
+     * 失败返回 null，调用方降级。
+     */
+    private fun runCustomJs(type: String?, code: String, content: String): String? {
+        if (quickJsReady == false) return null
+        var ctx: QuickJSContext? = null
+        return try {
+            if (quickJsReady == null) {
+                quickJsReady = try {
+                    QuickJSLoader.init()
+                    true
+                } catch (e: Exception) {
+                    Log.w(TAG, "QuickJS 初始化失败: ${e.message}")
+                    false
+                }
+            }
+            if (quickJsReady != true) return null
+            ctx = QuickJSContext.create()
+            // 对齐网页端：先剥掉 TS 类型注解，再调用约定的函数名
+            val js = stripTsAnnotations(code) +
+                "\nfilterAdsFromM3U8(${JSONObject.quote(type ?: "")}, ${JSONObject.quote(content)});"
+            val result = ctx.evaluate(js)?.toString()
+            result?.takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            Log.w(TAG, "自定义去广告 JS 执行失败: ${e.message}")
+            null
+        } finally {
+            try {
+                ctx?.destroy()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * 剥掉 TS 类型注解（与网页端 play/page.tsx 的三条 replace 等价），转成纯 JS。
+     * 注意 Kotlin 替换串里的 $ 必须转义。
+     */
+    private fun stripTsAnnotations(code: String): String {
+        var s = code
+        s = Regex("""(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*([,)])""")
+            .replace(s, "\$1\$3")
+        s = Regex("""\)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*\{""")
+            .replace(s, ") {")
+        s = Regex("""(const|let|var)\s+(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*=""")
+            .replace(s, "\$1 \$2 =")
+        return s
+    }
+
+    /** 内置规则：广告块指纹 → 关键字。纯函数。 */
+    private fun filterBuiltin(content: String): String {
         var lines = content.split('\n')
         var removedBlocks = 0
         var removedKeywords = 0
@@ -69,7 +177,7 @@ object AdFilterService {
             removedKeywords = it.second
         }
         val removed = removedBlocks + removedKeywords
-        if (removed > 0) Log.i(TAG, "去广告共移除 $removed 行（广告块 $removedBlocks，关键字 $removedKeywords）")
+        if (removed > 0) Log.i(TAG, "内置规则移除 $removed 行（广告块 $removedBlocks，关键字 $removedKeywords）")
         return lines.joinToString("\n")
     }
 

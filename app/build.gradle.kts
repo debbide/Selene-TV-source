@@ -121,6 +121,9 @@ dependencies {
     implementation(libs.androidx.media3.extractor)
     implementation(libs.libmpv)
 
+    // 自定义去广告 JS 执行引擎（与 HaiYin 同款，ELF 已做 16KB 对齐）
+    implementation("wang.harlon.quickjs:wrapper-android:3.2.3")
+
     // Baseline Profile：运行期安装由 :baselineprofile 生成、随 release 打包的 app 级 profile（AOT 热路径）
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":baselineprofile"))
