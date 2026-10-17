@@ -9,7 +9,8 @@ import java.net.URL
 /**
  * 自定义去广告 JS 拉取器（对齐 LunaTV 网页端逻辑）。
  *
- * - 公开接口，无需登录 cookie（与 ApiService.buildUrl 的登录强校验不同，这里直接拼 URL）。
+ * - 请求带上登录 cookie：服务端 proxy 中间件的公开白名单不含 /api/ad-filter，
+ *   无 cookie 会 401（route 注释虽写"公开"，实际以中间件为准）。
  * - GET /api/ad-filter → {version}：version 为 0 表示服务端未配置，清空本地缓存。
  * - 版本号变化时 GET /api/ad-filter?full=true → {code, version}，落盘缓存。
  * - 版本号最多每 30 分钟检查一次；任何失败都静默降级（沿用内置规则）。
@@ -61,6 +62,11 @@ object AdFilterFetcher {
             conn.connectTimeout = TIMEOUT_MS
             conn.readTimeout = TIMEOUT_MS
             conn.setRequestProperty("Accept", "application/json")
+            // 注意：服务端 proxy 中间件的公开白名单不含 /api/ad-filter，
+            // 无 cookie 会 401；App 已登录，直接带上 cookie（与 ApiService 一致）。
+            AppDataService.getCookiesSync()?.takeIf { it.isNotBlank() }?.let {
+                conn.setRequestProperty("Cookie", it)
+            }
             val code = conn.responseCode
             if (code != HttpURLConnection.HTTP_OK) throw IllegalStateException("HTTP $code")
             val body = conn.inputStream.bufferedReader().use { it.readText() }
